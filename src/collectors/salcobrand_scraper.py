@@ -12,12 +12,13 @@ from urllib.request import Request, urlopen
 
 from src.collectors.base import ProductOffer
 
-DEFAULT_START_URL = "https://salcobrand.cl/cuidado-de-la-piel"
+DEFAULT_START_URL = "https://www.salcobrand.cl/cuidado-de-la-piel"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_PAGES = 3
+DEFAULT_BROWSER_TIMEOUT_MS = 45000
 
 _PRICE_RE = re.compile(r"(\d{1,3}(?:[\.,]\d{3})+|\d+)")
-_HREF_RE = re.compile(r"href=[\"']([^\"']+/(?:producto|product)/[^\"']+)[\"']", re.IGNORECASE)
+_HREF_RE = re.compile(r"href=[\"']([^\"']+/(?:producto|productos|product|products)/[^\"']+)[\"']", re.IGNORECASE)
 _TITLE_RE = re.compile(r"title=[\"']([^\"']+)[\"']", re.IGNORECASE)
 _JSON_LD_RE = re.compile(
     r"<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
@@ -55,6 +56,29 @@ def _fetch_html(url: str) -> str:
         return resp.read().decode("utf-8", errors="ignore")
 
 
+def _fetch_html_playwright(url: str) -> str:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for Salcobrand rendering fallback. "
+            "Install dependencies and browser: pip install -r requirements.txt && python -m playwright install chromium"
+        ) from exc
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page.goto(url, wait_until="domcontentloaded", timeout=DEFAULT_BROWSER_TIMEOUT_MS)
+            page.wait_for_timeout(3500)
+            return page.content()
+        finally:
+            browser.close()
+
+
 def _add_or_replace_query(url: str, key: str, value: str) -> str:
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
@@ -83,6 +107,15 @@ def _page_urls(start_url: str, max_pages: int) -> list[str]:
 
 
 def _parse_from_json_ld(html: str, base_url: str, now: datetime, max_items: int) -> list[ProductOffer]:
+    def walk_nodes(node):
+        if isinstance(node, dict):
+            yield node
+            for v in node.values():
+                yield from walk_nodes(v)
+        elif isinstance(node, list):
+            for item in node:
+                yield from walk_nodes(item)
+
     offers: list[ProductOffer] = []
     for match in _JSON_LD_RE.findall(html):
         raw = match.strip()
@@ -93,8 +126,7 @@ def _parse_from_json_ld(html: str, base_url: str, now: datetime, max_items: int)
         except json.JSONDecodeError:
             continue
 
-        entries = payload if isinstance(payload, list) else [payload]
-        for entry in entries:
+        for entry in walk_nodes(payload):
             if not isinstance(entry, dict):
                 continue
             if entry.get("@type") not in {"Product", "Offer", "ListItem"}:
@@ -209,15 +241,29 @@ def collect_salcobrand_skincare(max_items: int = 100) -> list[ProductOffer]:
     now = datetime.now(timezone.utc)
 
     offers_by_id: dict[str, ProductOffer] = {}
+    page_errors: list[str] = []
+    render_errors: list[str] = []
+    fetched_pages = 0
+    use_playwright = os.getenv("SALCOBRAND_USE_PLAYWRIGHT", "1").lower() not in {"0", "false", "no"}
     for page_url in _page_urls(start_url, max_pages):
         try:
             html = _fetch_html(page_url)
         except (HTTPError, URLError, TimeoutError, ValueError):
+            page_errors.append(page_url)
             continue
+        fetched_pages += 1
 
         page_offers = _parse_from_json_ld(html, page_url, now, max_items)
         if not page_offers:
             page_offers = _parse_from_html_heuristic(html, page_url, now, max_items)
+        if not page_offers and use_playwright:
+            try:
+                rendered_html = _fetch_html_playwright(page_url)
+                page_offers = _parse_from_json_ld(rendered_html, page_url, now, max_items)
+                if not page_offers:
+                    page_offers = _parse_from_html_heuristic(rendered_html, page_url, now, max_items)
+            except Exception as exc:  # pragma: no cover
+                render_errors.append(f"{page_url}: {exc}")
 
         for offer in page_offers:
             offers_by_id[offer.retailer_product_id] = offer
@@ -227,4 +273,15 @@ def collect_salcobrand_skincare(max_items: int = 100) -> list[ProductOffer]:
         if len(offers_by_id) >= max_items:
             break
 
+    if fetched_pages == 0:
+        raise RuntimeError(
+            f"Could not fetch any Salcobrand pages (start_url={start_url}, pages={max_pages}). "
+            f"Failed URLs: {', '.join(page_errors[:3])}"
+        )
+    if not offers_by_id:
+        render_part = f" Render errors: {' | '.join(render_errors[:2])}" if render_errors else ""
+        raise RuntimeError(
+            f"Fetched {fetched_pages} Salcobrand page(s) but parsed 0 offers. "
+            f"Selectors/markup likely changed.{render_part}"
+        )
     return list(offers_by_id.values())
