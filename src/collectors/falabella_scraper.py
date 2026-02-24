@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 from src.collectors.base import ProductOffer
 
-DEFAULT_START_URL = "https://www.falabella.com/falabella-cl/category/cat2060/Cuidado-de-la-piel"
+DEFAULT_START_URL = "https://www.falabella.com/falabella-cl/shop/cuidado-de-la-piel"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_PAGES = 3
 DEFAULT_BROWSER_TIMEOUT_MS = 45000

@@ -9,7 +9,7 @@ TARGETS = {
     "salcobrand": os.getenv("SALCOBRAND_START_URL", "https://www.salcobrand.cl/cuidado-de-la-piel"),
     "cruzverde": os.getenv("CRUZVERDE_START_URL", "https://www.cruzverde.cl/cuidado-facial"),
     "falabella": os.getenv(
-        "FALABELLA_START_URL", "https://www.falabella.com/falabella-cl/category/cat2060/Cuidado-de-la-piel"
+        "FALABELLA_START_URL", "https://www.falabella.com/falabella-cl/shop/cuidado-de-la-piel"
     ),
 }
 

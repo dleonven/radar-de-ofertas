@@ -12,7 +12,7 @@ from playwright.sync_api import sync_playwright
 TARGETS = {
     "salcobrand": "https://www.salcobrand.cl/cuidado-de-la-piel",
     "cruzverde": "https://www.cruzverde.cl/cuidado-facial",
-    "falabella": "https://www.falabella.com/falabella-cl/category/cat2060/Cuidado-de-la-piel",
+    "falabella": "https://www.falabella.com/falabella-cl/shop/cuidado-de-la-piel",
 }
 
 

@@ -130,7 +130,7 @@ Cruz Verde:
 - `CRUZVERDE_MAX_PAGES` (default: `3`)
 
 Falabella:
-- `FALABELLA_START_URL` (default: `https://www.falabella.com/falabella-cl/category/cat2060/Cuidado-de-la-piel`)
+- `FALABELLA_START_URL` (default: `https://www.falabella.com/falabella-cl/shop/cuidado-de-la-piel`)
 - `FALABELLA_MAX_PAGES` (default: `3`)
 
 If a live scrape fails or returns empty data for a retailer, the pipeline fails and records an error.
