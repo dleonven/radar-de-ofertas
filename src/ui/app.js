@@ -13,6 +13,7 @@ const statusFields = {
   evaluations: document.getElementById('st_evaluations'),
   salco: document.getElementById('st_salco'),
   cruz: document.getElementById('st_cruz'),
+  fala: document.getElementById('st_fala'),
 };
 
 const fields = {
@@ -57,6 +58,7 @@ function updateStatusCard(data) {
     statusFields.evaluations.textContent = '-';
     statusFields.salco.textContent = '-';
     statusFields.cruz.textContent = '-';
+    statusFields.fala.textContent = '-';
     runErrors.classList.add('hidden');
     runErrors.textContent = '';
     return;
@@ -70,10 +72,12 @@ function updateStatusCard(data) {
   statusFields.evaluations.textContent = String(data.total_evaluations);
   statusFields.salco.textContent = `${sourceLabel(data.salcobrand_source)} (${data.salcobrand_count})`;
   statusFields.cruz.textContent = `${sourceLabel(data.cruzverde_source)} (${data.cruzverde_count})`;
+  statusFields.fala.textContent = `${sourceLabel(data.falabella_source)} (${data.falabella_count})`;
 
   const errors = [];
   if (data.salcobrand_error) errors.push(`Salcobrand: ${data.salcobrand_error}`);
   if (data.cruzverde_error) errors.push(`Cruz Verde: ${data.cruzverde_error}`);
+  if (data.falabella_error) errors.push(`Falabella: ${data.falabella_error}`);
   if (data.error_message) errors.push(`Pipeline: ${data.error_message}`);
 
   if (errors.length) {

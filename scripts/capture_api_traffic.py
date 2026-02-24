@@ -12,6 +12,7 @@ from playwright.sync_api import sync_playwright
 TARGETS = {
     "salcobrand": "https://www.salcobrand.cl/cuidado-de-la-piel",
     "cruzverde": "https://www.cruzverde.cl/cuidado-facial",
+    "falabella": "https://www.falabella.com/falabella-cl/category/cat2060/Cuidado-de-la-piel",
 }
 
 
@@ -132,7 +133,7 @@ def capture_target(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Capture retailer API traffic using Playwright.")
-    parser.add_argument("--retailer", choices=["salcobrand", "cruzverde", "all"], default="all")
+    parser.add_argument("--retailer", choices=["salcobrand", "cruzverde", "falabella", "all"], default="all")
     parser.add_argument("--wait-seconds", type=int, default=18)
     parser.add_argument("--max-chars", type=int, default=8000)
     parser.add_argument("--out-dir", default="data")

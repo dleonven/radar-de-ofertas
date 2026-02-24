@@ -5,6 +5,7 @@ from typing import Optional
 
 from src.collectors.base import ProductOffer
 from src.collectors.cruzverde_scraper import collect_cruzverde_skincare
+from src.collectors.falabella_scraper import collect_falabella_skincare
 from src.collectors.salcobrand_scraper import collect_salcobrand_skincare
 from src.db.migrate import run_migrations
 from src.db.repository import (
@@ -29,6 +30,8 @@ def run_pipeline() -> None:
     salco_error: Optional[str] = None
     cruzverde_source = "live"
     cruzverde_error: Optional[str] = None
+    falabella_source = "live"
+    falabella_error: Optional[str] = None
     total_snapshots = 0
     total_evaluations = 0
 
@@ -54,6 +57,17 @@ def run_pipeline() -> None:
         cruzverde_error = cruzverde_error or "Scraper returned no offers."
     offers.extend(cruzverde_offers)
 
+    try:
+        falabella_offers = collect_falabella_skincare()
+    except Exception as exc:
+        falabella_offers = []
+        falabella_error = str(exc)
+        falabella_source = "error"
+    if not falabella_offers:
+        falabella_source = "error"
+        falabella_error = falabella_error or "Scraper returned no offers."
+    offers.extend(falabella_offers)
+
     print(
         "collector_summary",
         {
@@ -61,6 +75,8 @@ def run_pipeline() -> None:
             "salcobrand_error": salco_error,
             "cruzverde_count": len(cruzverde_offers),
             "cruzverde_error": cruzverde_error,
+            "falabella_count": len(falabella_offers),
+            "falabella_error": falabella_error,
             "total_offers": len(offers),
         },
     )
@@ -73,7 +89,10 @@ def run_pipeline() -> None:
     try:
         if not offers:
             raise RuntimeError(
-                f"Real scraping required. Salcobrand error={salco_error!r}; Cruz Verde error={cruzverde_error!r}"
+                "Real scraping required. "
+                f"Salcobrand error={salco_error!r}; "
+                f"Cruz Verde error={cruzverde_error!r}; "
+                f"Falabella error={falabella_error!r}"
             )
 
         for offer in offers:
@@ -135,6 +154,9 @@ def run_pipeline() -> None:
             cruzverde_source=cruzverde_source,
             cruzverde_count=len(cruzverde_offers),
             cruzverde_error=cruzverde_error,
+            falabella_source=falabella_source,
+            falabella_count=len(falabella_offers),
+            falabella_error=falabella_error,
             error_message=error_message,
         )
 

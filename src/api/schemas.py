@@ -36,5 +36,8 @@ class PipelineStatus(BaseModel):
     cruzverde_source: str
     cruzverde_count: int
     cruzverde_error: Optional[str]
+    falabella_source: str
+    falabella_count: int
+    falabella_error: Optional[str]
     error_message: Optional[str]
     created_at: str

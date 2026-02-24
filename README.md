@@ -2,7 +2,7 @@
 
 Minimal end-to-end slice that:
 - applies DB migration,
-- ingests Salcobrand and Cruz Verde skincare offers (real scrape only),
+- ingests Salcobrand, Cruz Verde, and Falabella skincare offers (real scrape only),
 - evaluates discount credibility,
 - exposes `GET /deals` via FastAPI.
 
@@ -68,7 +68,7 @@ Workflow incluido:
 
 Uso:
 1. GitHub -> Actions -> `Capture Retailer API Traffic` -> `Run workflow`
-2. Elegir `retailer` (`all`, `salcobrand`, `cruzverde`)
+2. Elegir `retailer` (`all`, `salcobrand`, `cruzverde`, `falabella`)
 3. Descargar artifact `api-capture-artifacts`
 4. Revisar:
    - `data/network_capture_<retailer>.jsonl`
@@ -129,10 +129,14 @@ Cruz Verde:
 - `CRUZVERDE_START_URL` (default: `https://www.cruzverde.cl/cuidado-facial`)
 - `CRUZVERDE_MAX_PAGES` (default: `3`)
 
+Falabella:
+- `FALABELLA_START_URL` (default: `https://www.falabella.com/falabella-cl/category/cat2060/Cuidado-de-la-piel`)
+- `FALABELLA_MAX_PAGES` (default: `3`)
+
 If a live scrape fails or returns empty data for a retailer, the pipeline fails and records an error.
 
 ## Notes
 - DB path defaults to `data/app.db` (override with `APP_DB_PATH`).
 - Minimum visible discount gate: deals under 10% cannot be labeled `LIKELY_REAL`/`REAL`.
 - `LIKELY_REAL` threshold is calibrated to score `>= 0.55` with the visible discount gate enabled.
-- With two retailers, cross-store delta can be populated when canonical matching resolves both sides.
+- With three retailers, cross-store delta has broader market context when canonical matching resolves peers.

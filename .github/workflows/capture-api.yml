@@ -12,6 +12,7 @@ on:
           - all
           - salcobrand
           - cruzverde
+          - falabella
       wait_seconds:
         description: "Seconds to wait for SPA/network"
         required: true

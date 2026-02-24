@@ -369,6 +369,9 @@ def create_pipeline_run(
     cruzverde_source: str,
     cruzverde_count: int,
     cruzverde_error: str | None,
+    falabella_source: str,
+    falabella_count: int,
+    falabella_error: str | None,
     error_message: str | None,
 ) -> None:
     with get_conn() as conn:
@@ -377,8 +380,10 @@ def create_pipeline_run(
             INSERT INTO pipeline_runs (
               started_at, finished_at, status, total_offers, total_snapshots, total_evaluations,
               salcobrand_source, salcobrand_count, salcobrand_error,
-              cruzverde_source, cruzverde_count, cruzverde_error, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              cruzverde_source, cruzverde_count, cruzverde_error,
+              falabella_source, falabella_count, falabella_error,
+              error_message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 started_at,
@@ -393,6 +398,9 @@ def create_pipeline_run(
                 cruzverde_source,
                 cruzverde_count,
                 cruzverde_error,
+                falabella_source,
+                falabella_count,
+                falabella_error,
                 error_message,
             ),
         )
@@ -416,6 +424,9 @@ def fetch_latest_pipeline_run() -> dict[str, Any] | None:
               cruzverde_source,
               cruzverde_count,
               cruzverde_error,
+              falabella_source,
+              falabella_count,
+              falabella_error,
               error_message,
               created_at
             FROM pipeline_runs
