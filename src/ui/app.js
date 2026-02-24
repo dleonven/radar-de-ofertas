@@ -43,7 +43,7 @@ function fmtDate(value) {
 
 function sourceLabel(value) {
   if (value === 'live') return 'en vivo';
-  if (value === 'fallback') return 'respaldo';
+  if (value === 'error') return 'error';
   return value || '-';
 }
 

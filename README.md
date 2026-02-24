@@ -2,7 +2,7 @@
 
 Minimal end-to-end slice that:
 - applies DB migration,
-- ingests Salcobrand and Cruz Verde skincare offers (live scrape, fallback demo),
+- ingests Salcobrand and Cruz Verde skincare offers (real scrape only),
 - evaluates discount credibility,
 - exposes `GET /deals` via FastAPI.
 
@@ -59,6 +59,7 @@ Pasos recomendados:
 Notas:
 - Si `DATABASE_URL` está definido, el backend usa Postgres automáticamente.
 - Si no está definido, usa SQLite local (`APP_DB_PATH`).
+- Si un scraper falla o devuelve 0 resultados, la corrida falla (no se inyectan datos dummy).
 
 ## Deals filters
 
@@ -111,7 +112,7 @@ Cruz Verde:
 - `CRUZVERDE_START_URL` (default: `https://www.cruzverde.cl/cuidado-facial`)
 - `CRUZVERDE_MAX_PAGES` (default: `3`)
 
-If a live scrape fails or returns empty data for a retailer, that retailer falls back to deterministic demo offers.
+If a live scrape fails or returns empty data for a retailer, the pipeline fails and records an error.
 
 ## Notes
 - DB path defaults to `data/app.db` (override with `APP_DB_PATH`).
