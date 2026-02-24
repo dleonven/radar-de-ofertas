@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import uuid
 from datetime import datetime, timezone
 from html import unescape
 from typing import Optional
@@ -16,6 +17,8 @@ DEFAULT_START_URL = "https://www.salcobrand.cl/cuidado-de-la-piel"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_PAGES = 3
 DEFAULT_BROWSER_TIMEOUT_MS = 45000
+DEFAULT_PARTNER_ID = "602bba6097a5281b4cc438c9"
+DEFAULT_CATEGORY_PATH = "dermocoaching"
 
 _PRICE_RE = re.compile(r"(\d{1,3}(?:[\.,]\d{3})+|\d+)")
 _HREF_RE = re.compile(r"href=[\"']([^\"']+/(?:producto|productos|product|products)/[^\"']+)[\"']", re.IGNORECASE)
@@ -54,6 +57,79 @@ def _fetch_html(url: str) -> str:
     )
     with urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
         return resp.read().decode("utf-8", errors="ignore")
+
+
+def _fetch_json(url: str) -> object:
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; discount-detector/0.1)",
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
+        },
+    )
+    with urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
+        raw = resp.read().decode("utf-8", errors="ignore")
+    return json.loads(raw)
+
+
+def _collect_from_retailrocket_api(now: datetime, max_items: int) -> list[ProductOffer]:
+    partner_id = os.getenv("SALCOBRAND_PARTNER_ID", DEFAULT_PARTNER_ID)
+    category_path = os.getenv("SALCOBRAND_CATEGORY_PATH", DEFAULT_CATEGORY_PATH)
+    session = uuid.uuid4().hex[:24]
+    pvid = str(abs(hash(f"{session}-{now.isoformat()}")) % 10**12)
+    endpoint = (
+        f"https://api.retailrocket.net/api/2.0/recommendation/popular/{partner_id}/"
+        f"?categoryIds=&categoryPaths={category_path}&session={session}&pvid={pvid}&isDebug=false&format=json"
+    )
+
+    payload = _fetch_json(endpoint)
+    if not isinstance(payload, list):
+        return []
+
+    offers: list[ProductOffer] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        name = _clean_text(str(item.get("Name") or ""))
+        url = _clean_text(str(item.get("Url") or ""))
+        price_current = item.get("Price")
+        old_price = item.get("OldPrice")
+        if not name or not url or price_current is None:
+            continue
+        try:
+            price_current = float(price_current)
+        except Exception:
+            continue
+        try:
+            price_list = float(old_price) if old_price is not None else None
+        except Exception:
+            price_list = None
+
+        if not url.startswith("http"):
+            url = urljoin("https://salcobrand.cl/", url)
+        slug = url.rstrip("/").split("/")[-1] or uuid.uuid4().hex[:8]
+
+        offers.append(
+            ProductOffer(
+                retailer_name="Salcobrand",
+                retailer_domain="salcobrand.cl",
+                retailer_product_id=f"SB-{slug}",
+                product_url=url,
+                title=name,
+                brand=name.split(" ")[0] if name else "",
+                size_raw=name,
+                category_raw="skincare",
+                price_current=price_current,
+                price_list=price_list,
+                promo_text=None,
+                in_stock=True,
+                scraped_at=now,
+            )
+        )
+        if len(offers) >= max_items:
+            break
+    return offers
 
 
 def _fetch_html_playwright(url: str) -> str:
@@ -239,6 +315,14 @@ def collect_salcobrand_skincare(max_items: int = 100) -> list[ProductOffer]:
     start_url = os.getenv("SALCOBRAND_START_URL", DEFAULT_START_URL)
     max_pages = int(os.getenv("SALCOBRAND_MAX_PAGES", str(DEFAULT_MAX_PAGES)))
     now = datetime.now(timezone.utc)
+
+    # Prefer direct product API discovered via network capture.
+    try:
+        api_offers = _collect_from_retailrocket_api(now, max_items)
+        if api_offers:
+            return api_offers
+    except Exception:
+        pass
 
     offers_by_id: dict[str, ProductOffer] = {}
     page_errors: list[str] = []
