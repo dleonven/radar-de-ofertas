@@ -1,0 +1,211 @@
+:root {
+  --bg: #f4f6f0;
+  --ink: #0c1a21;
+  --panel: rgba(255, 255, 255, 0.84);
+  --line: rgba(12, 26, 33, 0.12);
+  --accent: #e07a5f;
+  --accent-2: #3d5a80;
+  --good: #2a9d8f;
+  --warn: #e9c46a;
+  --bad: #e76f51;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at 10% 10%, #dbe8d2, transparent 45%),
+              radial-gradient(circle at 90% 20%, #f7d7c4, transparent 35%),
+              var(--bg);
+}
+
+.bg-shape {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(65px);
+  opacity: 0.45;
+  z-index: 0;
+}
+.bg-shape-a { width: 280px; height: 280px; background: #85c7a5; top: -70px; left: -80px; }
+.bg-shape-b { width: 320px; height: 320px; background: #f2b5a7; bottom: -120px; right: -60px; }
+
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.8vw, 2.6rem);
+  letter-spacing: -0.02em;
+}
+.hero p { margin: 8px 0 0; opacity: 0.8; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  border-radius: 14px;
+  padding: 14px;
+  margin-top: 16px;
+}
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.status-grid div {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: #fff;
+}
+.status-grid span {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-bottom: 3px;
+}
+.run-errors {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(231,111,81,0.35);
+  background: rgba(231,111,81,0.12);
+  font-size: 0.88rem;
+}
+
+.filters .row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.88rem;
+}
+.checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 22px;
+}
+input, select, button {
+  font: inherit;
+}
+input, select {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 14px;
+  background: var(--accent-2);
+  color: #fff;
+  cursor: pointer;
+}
+button.secondary {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+#meta { opacity: 0.75; font-size: 0.88rem; }
+
+.table-panel { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1000px;
+}
+th, td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.75; }
+.deal-row { cursor: pointer; }
+.deal-row:hover { background: rgba(61, 90, 128, 0.06); }
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+}
+.badge.REAL, .badge.LIKELY_REAL { background: rgba(42, 157, 143, 0.14); border-color: rgba(42,157,143,0.35); color: #1f6f66; }
+.badge.SUSPICIOUS { background: rgba(233, 196, 106, 0.18); border-color: rgba(233,196,106,0.4); color: #7f5c13; }
+.badge.LIKELY_FAKE { background: rgba(231, 111, 81, 0.18); border-color: rgba(231,111,81,0.35); color: #8f2f18; }
+
+a { color: var(--accent-2); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.hidden { display: none; }
+.detail-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+.reason {
+  margin: 12px 0;
+  font-size: 0.95rem;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(61, 90, 128, 0.08);
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+.stats-grid div {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: #fff;
+}
+.stats-grid span {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-bottom: 3px;
+}
+.rules h3 {
+  margin: 14px 0 8px;
+  font-size: 0.9rem;
+}
+.rules ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.rules li {
+  margin: 4px 0;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 700px) {
+  .page { padding: 12px; }
+  .panel { padding: 10px; }
+}

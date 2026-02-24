@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inteligencia de Descuentos Dermocosmética</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape bg-shape-a"></div>
+    <div class="bg-shape bg-shape-b"></div>
+
+    <main class="page">
+      <header class="hero">
+        <h1>Inteligencia de Descuentos Dermocosmética</h1>
+        <p>Monitorea descuentos reales vs sospechosos en retailers chilenos.</p>
+      </header>
+
+      <section class="panel" id="status_panel">
+        <h2>Estado de Ejecución</h2>
+        <div id="run_status" class="status-grid">
+          <div><span>Estado</span><strong id="st_status">-</strong></div>
+          <div><span>Inicio</span><strong id="st_started">-</strong></div>
+          <div><span>Fin</span><strong id="st_finished">-</strong></div>
+          <div><span>Ofertas</span><strong id="st_offers">-</strong></div>
+          <div><span>Snapshots</span><strong id="st_snapshots">-</strong></div>
+          <div><span>Evaluaciones</span><strong id="st_evaluations">-</strong></div>
+          <div><span>Salcobrand</span><strong id="st_salco">-</strong></div>
+          <div><span>Cruz Verde</span><strong id="st_cruz">-</strong></div>
+        </div>
+        <p id="run_errors" class="run-errors hidden"></p>
+      </section>
+
+      <section class="panel filters">
+        <div class="row">
+          <label>Etiqueta
+            <select id="label">
+              <option value="">Cualquiera</option>
+              <option value="REAL">REAL</option>
+              <option value="LIKELY_REAL">LIKELY_REAL</option>
+              <option value="SUSPICIOUS">SUSPICIOUS</option>
+              <option value="LIKELY_FAKE">LIKELY_FAKE</option>
+            </select>
+          </label>
+          <label>Retailer
+            <input id="retailer" placeholder="Salcobrand" />
+          </label>
+          <label>Marca
+            <input id="brand" placeholder="cerave" />
+          </label>
+          <label>Puntaje mínimo
+            <input id="min_score" type="number" min="0" max="1" step="0.01" value="0" />
+          </label>
+          <label>Descuento visible >=
+            <input id="visible_ge" type="number" min="0" max="1" step="0.01" placeholder="0.10" />
+          </label>
+          <label class="checkbox-label">
+            <input id="cross_positive" type="checkbox" />
+            Solo ventaja positiva vs mercado
+          </label>
+        </div>
+        <div class="actions">
+          <button id="apply_btn">Aplicar filtros</button>
+          <button id="reset_btn" class="secondary">Limpiar</button>
+          <span id="meta"></span>
+        </div>
+      </section>
+
+      <section class="panel table-panel">
+        <table>
+          <thead>
+            <tr>
+              <th>Etiqueta</th>
+              <th>Retailer</th>
+              <th>Marca</th>
+              <th>Producto</th>
+              <th>Actual</th>
+              <th>Lista</th>
+              <th>Descuento</th>
+              <th>Vs mercado</th>
+              <th>Puntaje</th>
+              <th>Enlace</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </section>
+
+      <section class="panel detail-panel" id="detail_panel">
+        <h2>Detalle de Oferta</h2>
+        <p id="detail_hint">Haz clic en una fila para revisar la evidencia del puntaje.</p>
+        <div id="detail_body" class="detail-body hidden"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

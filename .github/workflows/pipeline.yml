@@ -1,0 +1,47 @@
+name: Discount Pipeline
+
+on:
+  schedule:
+    # 12:00 and 20:00 UTC (aprox 09:00 and 17:00 Chile during UTC-3)
+    - cron: "0 12,20 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: discount-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      APP_DB_PATH: data/app.db
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pipeline
+        run: python -m src.jobs.ingest_and_score
+
+      - name: Export label candidates
+        run: python scripts/export_label_candidates.py --out data/labels_candidates.csv --limit 1000
+
+      - name: Save artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-artifacts
+          path: |
+            data/app.db
+            data/labels_candidates.csv
+          if-no-files-found: warn
