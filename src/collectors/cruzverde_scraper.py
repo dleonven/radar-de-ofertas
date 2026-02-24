@@ -106,7 +106,10 @@ def _fetch_access_token() -> Optional[str]:
         "grant_type": "client_credentials",
         "scope": "openid",
     }
-    data = _post_json(auth_url, payload)
+    try:
+        data = _post_json(auth_url, payload)
+    except Exception:
+        return None
     if not isinstance(data, dict):
         return None
     auth_data = data.get("auth_data")
@@ -401,19 +404,12 @@ def _collect_from_products_api(now: datetime, max_items: int) -> list[ProductOff
     for category_id in all_category_ids:
         for page_idx in range(max_category_pages):
             offset = page_idx * page_size
-            query = urlencode(
-                {
-                    "limit": str(page_size),
-                    "offset": str(offset),
-                    "sort": "",
-                    "q": "",
-                    "isAndes": "true",
-                }
-            )
             search_url = (
-                f"{api_base}/products/search?{query}"
-                f"&refine%5B%5D=cgid%3D{category_id}"
+                f"{api_base}/products/search?"
+                f"limit={page_size}&offset={offset}&sort=&q=&refine[]=cgid={category_id}"
             )
+            if access_token:
+                search_url += "&isAndes=true"
 
             payload = None
             for auth_attempt in range(2):
