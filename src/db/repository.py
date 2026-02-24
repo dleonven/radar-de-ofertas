@@ -207,7 +207,7 @@ def create_evaluation(
                 discount_pct,
                 hist_delta_pct,
                 cross_store_delta_pct,
-                int(anchor_anomaly_flag),
+                bool(anchor_anomaly_flag) if is_postgres() else int(anchor_anomaly_flag),
                 json.dumps(rule_trace),
                 scoring_version,
             ),
