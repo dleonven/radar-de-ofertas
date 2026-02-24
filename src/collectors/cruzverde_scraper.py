@@ -16,6 +16,9 @@ DEFAULT_START_URL = "https://www.cruzverde.cl/cuidado-facial"
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_PAGES = 3
 DEFAULT_BROWSER_TIMEOUT_MS = 45000
+DEFAULT_API_BASE_URL = "https://api.cruzverde.cl/product-service"
+DEFAULT_API_PAGE_SIZE = 24
+DEFAULT_MAX_CATEGORY_PAGES = 5
 
 _PRICE_RE = re.compile(r"(\d{1,3}(?:[\.,]\d{3})+|\d+)")
 _HREF_RE = re.compile(r"href=[\"']([^\"']+/(?:producto|productos|product|products|p)/[^\"']+)[\"']", re.IGNORECASE)
@@ -54,6 +57,19 @@ def _fetch_html(url: str) -> str:
     )
     with urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
         return resp.read().decode("utf-8", errors="ignore")
+
+
+def _fetch_json(url: str) -> object:
+    req = Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; discount-detector/0.1)",
+            "Accept": "application/json,text/plain,*/*",
+            "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
+        },
+    )
+    with urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
+        return json.loads(resp.read().decode("utf-8", errors="ignore"))
 
 
 def _fetch_html_playwright(url: str) -> str:
@@ -237,6 +253,194 @@ def _parse_from_html_heuristic(html: str, base_url: str, now: datetime, max_item
     return offers
 
 
+def _iter_category_nodes(node):
+    if isinstance(node, dict):
+        yield node
+        categories = node.get("categories")
+        if isinstance(categories, list):
+            for child in categories:
+                yield from _iter_category_nodes(child)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _iter_category_nodes(item)
+
+
+def _is_skincare_category(category: dict) -> bool:
+    path = _clean_text(str(category.get("path") or "")).lower()
+    slug = _clean_text(str(category.get("slug") or "")).lower()
+    cat_id = _clean_text(str(category.get("id") or "")).lower()
+    if path.startswith("/dermocosmetica/") or path.startswith("/cuidado-piel/"):
+        return True
+    if "dermocosmetica" in cat_id or "dermocosmetica" in slug:
+        return True
+    return False
+
+
+def _candidate_category_ids() -> list[str]:
+    configured = os.getenv("CRUZVERDE_CATEGORY_IDS", "").strip()
+    defaults = [
+        "dermocosmetica",
+        "rostro-dermocosmetica",
+        "cuidado-piel-proteccion-solar",
+        "dermocosmetica-vichy",
+        "dermocosmetica-la-roche-posay",
+        "dermocosmetica-eucerin",
+        "dermocosmetica-avene",
+        "dermocosmetica-bioderma",
+        "dermocosmetica-uriage",
+        "dermocosmetica-isdin",
+    ]
+    seeds = [x.strip() for x in configured.split(",") if x.strip()] if configured else defaults
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for cid in seeds:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        deduped.append(cid)
+    return deduped
+
+
+def _parse_price(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return _extract_price(str(value))
+
+
+def _collect_from_products_api(now: datetime, max_items: int) -> list[ProductOffer]:
+    api_base = os.getenv("CRUZVERDE_API_BASE_URL", DEFAULT_API_BASE_URL).rstrip("/")
+    page_size = int(os.getenv("CRUZVERDE_API_PAGE_SIZE", str(DEFAULT_API_PAGE_SIZE)))
+    max_category_pages = int(os.getenv("CRUZVERDE_MAX_CATEGORY_PAGES", str(DEFAULT_MAX_CATEGORY_PAGES)))
+
+    category_ids = _candidate_category_ids()
+    dynamic_ids: list[str] = []
+    try:
+        tree_url = f"{api_base}/categories/category-tree?showInMenu=true"
+        tree_payload = _fetch_json(tree_url)
+        for node in _iter_category_nodes(tree_payload):
+            if not isinstance(node, dict):
+                continue
+            if not _is_skincare_category(node):
+                continue
+            cid = _clean_text(str(node.get("id") or ""))
+            if cid:
+                dynamic_ids.append(cid)
+    except Exception:
+        # Keep configured defaults if tree endpoint changes or becomes unavailable.
+        pass
+
+    all_category_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for cid in category_ids + dynamic_ids:
+        if not cid or cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        all_category_ids.append(cid)
+
+    offers_by_id: dict[str, ProductOffer] = {}
+    any_success = False
+    last_error: Optional[str] = None
+
+    for category_id in all_category_ids:
+        for page_idx in range(max_category_pages):
+            offset = page_idx * page_size
+            query = urlencode(
+                {
+                    "limit": str(page_size),
+                    "offset": str(offset),
+                    "sort": "",
+                    "q": "",
+                    "isAndes": "true",
+                }
+            )
+            search_url = (
+                f"{api_base}/products/search?{query}"
+                f"&refine%5B%5D=cgid%3D{category_id}"
+            )
+
+            try:
+                payload = _fetch_json(search_url)
+            except Exception as exc:
+                last_error = f"{category_id}@{offset}: {exc}"
+                break
+
+            if not isinstance(payload, dict):
+                continue
+            any_success = True
+            hits = payload.get("hits")
+            if not isinstance(hits, list) or not hits:
+                break
+
+            for hit in hits:
+                if not isinstance(hit, dict):
+                    continue
+                product_id = _clean_text(str(hit.get("productId") or ""))
+                title = _clean_text(str(hit.get("productName") or ""))
+                if not product_id or not title:
+                    continue
+
+                prices = hit.get("prices") if isinstance(hit.get("prices"), dict) else {}
+                price_current = _parse_price(
+                    prices.get("price-sale-cl") if isinstance(prices, dict) else None
+                )
+                price_list = _parse_price(
+                    prices.get("price-list-cl") if isinstance(prices, dict) else None
+                )
+                if price_current is None:
+                    price_current = price_list
+                if price_current is None:
+                    continue
+
+                product_url = _clean_text(str(hit.get("link") or ""))
+                if not product_url:
+                    product_url = f"https://www.cruzverde.cl/producto/{product_id}"
+
+                brand = _clean_text(str(hit.get("brand") or "")) or title.split(" ")[0]
+
+                promo_text = None
+                applied = hit.get("appliedPromotions")
+                if isinstance(applied, dict):
+                    applied_sale = applied.get("price-sale-cl")
+                    if isinstance(applied_sale, dict):
+                        promo_text = _clean_text(str(applied_sale.get("calloutMsg") or ""))
+                if not promo_text and isinstance(hit.get("promotions"), list) and hit["promotions"]:
+                    first_promo = hit["promotions"][0]
+                    if isinstance(first_promo, dict):
+                        promo_text = _clean_text(str(first_promo.get("calloutMsg") or ""))
+                if not promo_text:
+                    promo_text = None
+
+                offer = ProductOffer(
+                    retailer_name="Cruz Verde",
+                    retailer_domain="cruzverde.cl",
+                    retailer_product_id=f"CV-{product_id}",
+                    product_url=product_url,
+                    title=title,
+                    brand=brand,
+                    size_raw=title,
+                    category_raw="skincare",
+                    price_current=price_current,
+                    price_list=price_list,
+                    promo_text=promo_text,
+                    in_stock=True,
+                    scraped_at=now,
+                )
+                offers_by_id[offer.retailer_product_id] = offer
+                if len(offers_by_id) >= max_items:
+                    return list(offers_by_id.values())
+
+            total_count = payload.get("count")
+            if isinstance(total_count, int) and offset + page_size >= total_count:
+                break
+
+    if not offers_by_id and not any_success and last_error:
+        raise RuntimeError(f"Cruz Verde products API unavailable: {last_error}")
+    return list(offers_by_id.values())
+
+
 def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
     start_url = os.getenv("CRUZVERDE_START_URL", DEFAULT_START_URL)
     max_pages = int(os.getenv("CRUZVERDE_MAX_PAGES", str(DEFAULT_MAX_PAGES)))
@@ -247,6 +451,14 @@ def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
     render_errors: list[str] = []
     fetched_pages = 0
     use_playwright = os.getenv("CRUZVERDE_USE_PLAYWRIGHT", "1").lower() not in {"0", "false", "no"}
+    api_error: Optional[str] = None
+
+    try:
+        api_offers = _collect_from_products_api(now, max_items)
+        if api_offers:
+            return api_offers
+    except Exception as exc:
+        api_error = str(exc)
 
     for page_url in _page_urls(start_url, max_pages):
         try:
@@ -277,14 +489,16 @@ def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
             break
 
     if fetched_pages == 0:
+        api_part = f" API error: {api_error}" if api_error else ""
         raise RuntimeError(
             f"Could not fetch any Cruz Verde pages (start_url={start_url}, pages={max_pages}). "
-            f"Failed URLs: {', '.join(page_errors[:3])}"
+            f"Failed URLs: {', '.join(page_errors[:3])}.{api_part}"
         )
     if not offers_by_id:
         render_part = f" Render errors: {' | '.join(render_errors[:2])}" if render_errors else ""
+        api_part = f" API error: {api_error}" if api_error else ""
         raise RuntimeError(
             f"Fetched {fetched_pages} Cruz Verde page(s) but parsed 0 offers. "
-            f"Selectors/markup likely changed.{render_part}"
+            f"Selectors/markup likely changed.{render_part}{api_part}"
         )
     return list(offers_by_id.values())
