@@ -1,0 +1,42 @@
+name: Capture Cruz Verde Deep API
+
+on:
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Capture deep traffic
+        run: |
+          python scripts/capture_cruzverde_deep.py --out-dir data --max-links 14 --wait-seconds 7
+
+      - name: Analyze captures
+        run: |
+          python scripts/analyze_api_capture.py data/network_capture_cruzverde_deep.jsonl | tee data/capture_cruzverde_deep_analysis.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cruzverde-deep-capture-artifacts
+          path: |
+            data/network_capture_cruzverde_deep.jsonl
+            data/capture_cruzverde_deep_analysis.txt
+          if-no-files-found: warn
