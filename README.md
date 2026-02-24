@@ -61,6 +61,23 @@ Notas:
 - Si no está definido, usa SQLite local (`APP_DB_PATH`).
 - Si un scraper falla o devuelve 0 resultados, la corrida falla (no se inyectan datos dummy).
 
+## Captura de APIs (descubrir endpoints reales)
+
+Workflow incluido:
+- `/Users/dleonven/Documents/New project/.github/workflows/capture-api.yml`
+
+Uso:
+1. GitHub -> Actions -> `Capture Retailer API Traffic` -> `Run workflow`
+2. Elegir `retailer` (`all`, `salcobrand`, `cruzverde`)
+3. Descargar artifact `api-capture-artifacts`
+4. Revisar:
+   - `data/network_capture_<retailer>.jsonl`
+   - `data/capture_analysis.txt`
+
+Scripts locales:
+- Captura: `python scripts/capture_api_traffic.py --retailer all --wait-seconds 18 --out-dir data`
+- Análisis: `python scripts/analyze_api_capture.py data/network_capture_*.jsonl`
+
 ## Deals filters
 
 `GET /deals` supports:

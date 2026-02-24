@@ -1,0 +1,65 @@
+name: Capture Retailer API Traffic
+
+on:
+  workflow_dispatch:
+    inputs:
+      retailer:
+        description: "Retailer to capture"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - salcobrand
+          - cruzverde
+      wait_seconds:
+        description: "Seconds to wait for SPA/network"
+        required: true
+        default: "18"
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browser
+        run: python -m playwright install chromium
+
+      - name: Capture traffic
+        run: |
+          python scripts/capture_api_traffic.py \
+            --retailer "${{ github.event.inputs.retailer }}" \
+            --wait-seconds "${{ github.event.inputs.wait_seconds }}" \
+            --out-dir data
+
+      - name: Analyze capture
+        run: |
+          ls -la data || true
+          FILES=$(ls data/network_capture_*.jsonl 2>/dev/null || true)
+          if [ -n "$FILES" ]; then
+            python scripts/analyze_api_capture.py $FILES | tee data/capture_analysis.txt
+          else
+            echo "No capture files generated" | tee data/capture_analysis.txt
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-capture-artifacts
+          path: |
+            data/network_capture_*.jsonl
+            data/capture_analysis.txt
+          if-no-files-found: warn
