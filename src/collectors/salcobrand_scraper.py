@@ -75,17 +75,30 @@ def _fetch_json(url: str) -> object:
 
 def _collect_from_retailrocket_api(now: datetime, max_items: int) -> list[ProductOffer]:
     partner_id = os.getenv("SALCOBRAND_PARTNER_ID", DEFAULT_PARTNER_ID)
-    category_path = os.getenv("SALCOBRAND_CATEGORY_PATH", DEFAULT_CATEGORY_PATH)
-    session = uuid.uuid4().hex[:24]
-    pvid = str(abs(hash(f"{session}-{now.isoformat()}")) % 10**12)
-    endpoint = (
-        f"https://api.retailrocket.net/api/2.0/recommendation/popular/{partner_id}/"
-        f"?categoryIds=&categoryPaths={category_path}&session={session}&pvid={pvid}&isDebug=false&format=json"
-    )
+    configured = os.getenv("SALCOBRAND_CATEGORY_PATH", DEFAULT_CATEGORY_PATH).strip()
+    candidate_paths = [
+        configured,
+        "cuidado-de-la-piel",
+        "dermocosmetica",
+        "dermocoaching",
+        "",
+    ]
+    # Deduplicate while preserving order.
+    seen_paths: set[str] = set()
+    candidate_paths = [p for p in candidate_paths if not (p in seen_paths or seen_paths.add(p))]
 
-    payload = _fetch_json(endpoint)
-    if not isinstance(payload, list):
-        return []
+    payload = []
+    for category_path in candidate_paths:
+        session = uuid.uuid4().hex[:24]
+        pvid = str(abs(hash(f"{session}-{now.isoformat()}-{category_path}")) % 10**12)
+        endpoint = (
+            f"https://api.retailrocket.net/api/2.0/recommendation/popular/{partner_id}/"
+            f"?categoryIds=&categoryPaths={category_path}&session={session}&pvid={pvid}&isDebug=false&format=json"
+        )
+        data = _fetch_json(endpoint)
+        if isinstance(data, list) and data:
+            payload = data
+            break
 
     offers: list[ProductOffer] = []
     for item in payload:
