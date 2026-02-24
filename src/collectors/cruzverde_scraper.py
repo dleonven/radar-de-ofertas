@@ -19,6 +19,9 @@ DEFAULT_BROWSER_TIMEOUT_MS = 45000
 DEFAULT_API_BASE_URL = "https://api.cruzverde.cl/product-service"
 DEFAULT_API_PAGE_SIZE = 24
 DEFAULT_MAX_CATEGORY_PAGES = 5
+DEFAULT_AUTH_URL = "https://profiles-orc.api.andesml.com/identity/v1/client/auth"
+DEFAULT_AUTH_CLIENT_ID = "GxkRx0Db/VacheHZPWA4LlE8J09E3SX+aQblEE7pLn2NA7X9uU7eNYe/2oMnlLNKPPPTYV6IatroV59//yYeEw=="
+DEFAULT_AUTH_CLIENT_SECRET = "0udIUHRl0FDKzzIlYsgsHsgs9ltoMr89j5gjlWpZetbRhmLNeq7qBiv+CnnnPS5BYwmsZqtj8Z8xE3vA"
 
 _PRICE_RE = re.compile(r"(\d{1,3}(?:[\.,]\d{3})+|\d+)")
 _HREF_RE = re.compile(r"href=[\"']([^\"']+/(?:producto|productos|product|products|p)/[^\"']+)[\"']", re.IGNORECASE)
@@ -59,17 +62,60 @@ def _fetch_html(url: str) -> str:
         return resp.read().decode("utf-8", errors="ignore")
 
 
-def _fetch_json(url: str) -> object:
+def _fetch_json(url: str, headers: Optional[dict[str, str]] = None) -> object:
+    request_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; discount-detector/0.1)",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
+    }
+    if headers:
+        request_headers.update(headers)
     req = Request(
         url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; discount-detector/0.1)",
-            "Accept": "application/json,text/plain,*/*",
-            "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
-        },
+        headers=request_headers,
     )
     with urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
         return json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+
+def _post_json(url: str, payload: dict[str, str], headers: Optional[dict[str, str]] = None) -> object:
+    request_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; discount-detector/0.1)",
+        "Accept": "application/json,text/plain,*/*",
+        "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
+        "Content-Type": "application/json",
+    }
+    if headers:
+        request_headers.update(headers)
+    body = json.dumps(payload).encode("utf-8")
+    req = Request(url, data=body, headers=request_headers, method="POST")
+    with urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
+        return json.loads(resp.read().decode("utf-8", errors="ignore"))
+
+
+def _fetch_access_token() -> Optional[str]:
+    auth_url = os.getenv("CRUZVERDE_AUTH_URL", DEFAULT_AUTH_URL).strip()
+    client_id = os.getenv("CRUZVERDE_AUTH_CLIENT_ID", DEFAULT_AUTH_CLIENT_ID).strip()
+    client_secret = os.getenv("CRUZVERDE_AUTH_CLIENT_SECRET", DEFAULT_AUTH_CLIENT_SECRET).strip()
+    if not auth_url or not client_id or not client_secret:
+        return None
+
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "client_credentials",
+        "scope": "openid",
+    }
+    data = _post_json(auth_url, payload)
+    if not isinstance(data, dict):
+        return None
+    auth_data = data.get("auth_data")
+    if not isinstance(auth_data, dict):
+        return None
+    token = auth_data.get("access_token")
+    if not isinstance(token, str) or not token.strip():
+        return None
+    return token.strip()
 
 
 def _fetch_html_playwright(url: str) -> str:
@@ -315,11 +361,19 @@ def _collect_from_products_api(now: datetime, max_items: int) -> list[ProductOff
     page_size = int(os.getenv("CRUZVERDE_API_PAGE_SIZE", str(DEFAULT_API_PAGE_SIZE)))
     max_category_pages = int(os.getenv("CRUZVERDE_MAX_CATEGORY_PAGES", str(DEFAULT_MAX_CATEGORY_PAGES)))
 
+    access_token = _fetch_access_token()
+    api_headers: dict[str, str] = {
+        "Origin": "https://www.cruzverde.cl",
+        "Referer": "https://www.cruzverde.cl/",
+    }
+    if access_token:
+        api_headers["Authorization"] = f"Bearer {access_token}"
+
     category_ids = _candidate_category_ids()
     dynamic_ids: list[str] = []
     try:
         tree_url = f"{api_base}/categories/category-tree?showInMenu=true"
-        tree_payload = _fetch_json(tree_url)
+        tree_payload = _fetch_json(tree_url, headers=api_headers)
         for node in _iter_category_nodes(tree_payload):
             if not isinstance(node, dict):
                 continue
@@ -361,10 +415,23 @@ def _collect_from_products_api(now: datetime, max_items: int) -> list[ProductOff
                 f"&refine%5B%5D=cgid%3D{category_id}"
             )
 
-            try:
-                payload = _fetch_json(search_url)
-            except Exception as exc:
-                last_error = f"{category_id}@{offset}: {exc}"
+            payload = None
+            for auth_attempt in range(2):
+                try:
+                    payload = _fetch_json(search_url, headers=api_headers)
+                    break
+                except HTTPError as exc:
+                    last_error = f"{category_id}@{offset}: {exc}"
+                    if exc.code == 401 and auth_attempt == 0:
+                        access_token = _fetch_access_token()
+                        if access_token:
+                            api_headers["Authorization"] = f"Bearer {access_token}"
+                            continue
+                    break
+                except Exception as exc:
+                    last_error = f"{category_id}@{offset}: {exc}"
+                    break
+            if payload is None:
                 break
 
             if not isinstance(payload, dict):
