@@ -38,9 +38,9 @@ def run_pipeline() -> None:
         salco_offers = []
         salco_error = str(exc)
         salco_source = "error"
-    if not salco_offers and salco_error is None:
+    if not salco_offers:
         salco_source = "error"
-        salco_error = "Scraper returned no offers."
+        salco_error = salco_error or "Scraper returned no offers."
     offers.extend(salco_offers)
 
     try:
@@ -49,10 +49,21 @@ def run_pipeline() -> None:
         cruzverde_offers = []
         cruzverde_error = str(exc)
         cruzverde_source = "error"
-    if not cruzverde_offers and cruzverde_error is None:
+    if not cruzverde_offers:
         cruzverde_source = "error"
-        cruzverde_error = "Scraper returned no offers."
+        cruzverde_error = cruzverde_error or "Scraper returned no offers."
     offers.extend(cruzverde_offers)
+
+    print(
+        "collector_summary",
+        {
+            "salcobrand_count": len(salco_offers),
+            "salcobrand_error": salco_error,
+            "cruzverde_count": len(cruzverde_offers),
+            "cruzverde_error": cruzverde_error,
+            "total_offers": len(offers),
+        },
+    )
 
     pending_evaluations: list[tuple[int, int, int, int, ProductOffer]] = []
 
@@ -60,7 +71,7 @@ def run_pipeline() -> None:
     error_message: Optional[str] = None
 
     try:
-        if salco_error or cruzverde_error:
+        if not offers:
             raise RuntimeError(
                 f"Real scraping required. Salcobrand error={salco_error!r}; Cruz Verde error={cruzverde_error!r}"
             )
