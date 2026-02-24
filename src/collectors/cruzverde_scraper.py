@@ -22,6 +22,11 @@ DEFAULT_MAX_CATEGORY_PAGES = 5
 DEFAULT_AUTH_URL = "https://profiles-orc.api.andesml.com/identity/v1/client/auth"
 DEFAULT_AUTH_CLIENT_ID = "GxkRx0Db/VacheHZPWA4LlE8J09E3SX+aQblEE7pLn2NA7X9uU7eNYe/2oMnlLNKPPPTYV6IatroV59//yYeEw=="
 DEFAULT_AUTH_CLIENT_SECRET = "0udIUHRl0FDKzzIlYsgsHsgs9ltoMr89j5gjlWpZetbRhmLNeq7qBiv+CnnnPS5BYwmsZqtj8Z8xE3vA"
+DEFAULT_CAPTURE_URLS = (
+    "https://www.cruzverde.cl/dermocosmetica,"
+    "https://www.cruzverde.cl/dermocosmetica/rostro/,"
+    "https://www.cruzverde.cl/cuidado-piel/proteccion-solar/"
+)
 
 _PRICE_RE = re.compile(r"(\d{1,3}(?:[\.,]\d{3})+|\d+)")
 _HREF_RE = re.compile(r"href=[\"']([^\"']+/(?:producto|productos|product|products|p)/[^\"']+)[\"']", re.IGNORECASE)
@@ -504,6 +509,116 @@ def _collect_from_products_api(now: datetime, max_items: int) -> list[ProductOff
     return list(offers_by_id.values())
 
 
+def _collect_from_playwright_network(now: datetime, max_items: int) -> list[ProductOffer]:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for Cruz Verde network capture fallback. "
+            "Install dependencies and browser: pip install -r requirements.txt && python -m playwright install chromium"
+        ) from exc
+
+    capture_urls = [
+        u.strip()
+        for u in os.getenv("CRUZVERDE_CAPTURE_URLS", DEFAULT_CAPTURE_URLS).split(",")
+        if u.strip()
+    ]
+    offers_by_id: dict[str, ProductOffer] = {}
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="es-CL",
+            )
+            page = context.new_page()
+
+            def on_response(resp):
+                url = resp.url or ""
+                if "/product-service/products/search" not in url:
+                    return
+                try:
+                    payload = resp.json()
+                except Exception:
+                    return
+                if not isinstance(payload, dict):
+                    return
+                hits = payload.get("hits")
+                if not isinstance(hits, list):
+                    return
+                for hit in hits:
+                    if not isinstance(hit, dict):
+                        continue
+                    product_id = _clean_text(str(hit.get("productId") or ""))
+                    title = _clean_text(str(hit.get("productName") or ""))
+                    if not product_id or not title:
+                        continue
+
+                    prices = hit.get("prices") if isinstance(hit.get("prices"), dict) else {}
+                    price_current = _parse_price(
+                        prices.get("price-sale-cl") if isinstance(prices, dict) else None
+                    )
+                    price_list = _parse_price(
+                        prices.get("price-list-cl") if isinstance(prices, dict) else None
+                    )
+                    if price_current is None:
+                        price_current = price_list
+                    if price_current is None:
+                        continue
+
+                    product_url = _clean_text(str(hit.get("link") or ""))
+                    if not product_url:
+                        product_url = f"https://www.cruzverde.cl/producto/{product_id}"
+
+                    brand = _clean_text(str(hit.get("brand") or "")) or title.split(" ")[0]
+
+                    promo_text = None
+                    applied = hit.get("appliedPromotions")
+                    if isinstance(applied, dict):
+                        applied_sale = applied.get("price-sale-cl")
+                        if isinstance(applied_sale, dict):
+                            promo_text = _clean_text(str(applied_sale.get("calloutMsg") or ""))
+                    if not promo_text and isinstance(hit.get("promotions"), list) and hit["promotions"]:
+                        first_promo = hit["promotions"][0]
+                        if isinstance(first_promo, dict):
+                            promo_text = _clean_text(str(first_promo.get("calloutMsg") or ""))
+                    if not promo_text:
+                        promo_text = None
+
+                    offer = ProductOffer(
+                        retailer_name="Cruz Verde",
+                        retailer_domain="cruzverde.cl",
+                        retailer_product_id=f"CV-{product_id}",
+                        product_url=product_url,
+                        title=title,
+                        brand=brand,
+                        size_raw=title,
+                        category_raw="skincare",
+                        price_current=price_current,
+                        price_list=price_list,
+                        promo_text=promo_text,
+                        in_stock=True,
+                        scraped_at=now,
+                    )
+                    offers_by_id[offer.retailer_product_id] = offer
+                    if len(offers_by_id) >= max_items:
+                        break
+
+            page.on("response", on_response)
+
+            for url in capture_urls:
+                page.goto(url, wait_until="domcontentloaded", timeout=DEFAULT_BROWSER_TIMEOUT_MS)
+                page.wait_for_timeout(6000)
+                if len(offers_by_id) >= max_items:
+                    break
+        finally:
+            browser.close()
+
+    return list(offers_by_id.values())
+
+
 def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
     start_url = os.getenv("CRUZVERDE_START_URL", DEFAULT_START_URL)
     max_pages = int(os.getenv("CRUZVERDE_MAX_PAGES", str(DEFAULT_MAX_PAGES)))
@@ -512,6 +627,7 @@ def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
     offers_by_id: dict[str, ProductOffer] = {}
     page_errors: list[str] = []
     render_errors: list[str] = []
+    network_errors: list[str] = []
     fetched_pages = 0
     use_playwright = os.getenv("CRUZVERDE_USE_PLAYWRIGHT", "1").lower() not in {"0", "false", "no"}
     api_error: Optional[str] = None
@@ -522,6 +638,14 @@ def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
             return api_offers
     except Exception as exc:
         api_error = str(exc)
+
+    if use_playwright:
+        try:
+            network_offers = _collect_from_playwright_network(now, max_items)
+            if network_offers:
+                return network_offers
+        except Exception as exc:
+            network_errors.append(str(exc))
 
     for page_url in _page_urls(start_url, max_pages):
         try:
@@ -559,9 +683,10 @@ def collect_cruzverde_skincare(max_items: int = 100) -> list[ProductOffer]:
         )
     if not offers_by_id:
         render_part = f" Render errors: {' | '.join(render_errors[:2])}" if render_errors else ""
+        network_part = f" Network errors: {' | '.join(network_errors[:2])}" if network_errors else ""
         api_part = f" API error: {api_error}" if api_error else ""
         raise RuntimeError(
             f"Fetched {fetched_pages} Cruz Verde page(s) but parsed 0 offers. "
-            f"Selectors/markup likely changed.{render_part}{api_part}"
+            f"Selectors/markup likely changed.{render_part}{network_part}{api_part}"
         )
     return list(offers_by_id.values())
