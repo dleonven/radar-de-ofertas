@@ -126,6 +126,96 @@ def _fetch_html_playwright(url: str) -> str:
             browser.close()
 
 
+def _collect_from_playwright_dom(
+    *,
+    start_url: str,
+    max_pages: int,
+    now: datetime,
+    max_items: int,
+) -> list[ProductOffer]:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError(
+            "Playwright is required for Falabella DOM extraction fallback. "
+            "Install dependencies and browser: pip install -r requirements.txt && python -m playwright install chromium"
+        ) from exc
+
+    offers_by_id: dict[str, ProductOffer] = {}
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            for page_url in _page_urls(start_url, max_pages):
+                page.goto(page_url, wait_until="domcontentloaded", timeout=DEFAULT_BROWSER_TIMEOUT_MS)
+                page.wait_for_timeout(3500)
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                page.wait_for_timeout(1200)
+
+                cards = page.eval_on_selector_all(
+                    "a[href*='/falabella-cl/product/']",
+                    """(nodes) => nodes.map((n) => {
+                        const href = n.href || n.getAttribute('href') || '';
+                        const title = (n.getAttribute('title') || n.textContent || '').trim();
+                        const card = n.closest('article, li, div');
+                        const text = (card && card.innerText) ? card.innerText : '';
+                        return { href, title, text };
+                    })""",
+                )
+                if not isinstance(cards, list):
+                    continue
+
+                for row in cards:
+                    if not isinstance(row, dict):
+                        continue
+                    href = _clean_text(str(row.get("href") or ""))
+                    if not href:
+                        continue
+                    if not href.startswith("http"):
+                        href = urljoin(page_url, href)
+                    pid = _product_id_from_url(href)
+                    if pid in offers_by_id:
+                        continue
+
+                    text = _clean_text(str(row.get("text") or ""))
+                    prices = _extract_window_prices(text)
+                    if not prices:
+                        continue
+                    price_current = min(prices)
+                    price_list = max(prices) if len(prices) > 1 and max(prices) > min(prices) else None
+
+                    title = _clean_text(str(row.get("title") or ""))
+                    if not title:
+                        slug = href.rstrip("/").split("/")[-1]
+                        title = _clean_text(slug.replace("-", " "))
+                    if not title:
+                        continue
+
+                    offers_by_id[pid] = ProductOffer(
+                        retailer_name="Falabella",
+                        retailer_domain="falabella.com",
+                        retailer_product_id=pid,
+                        product_url=href,
+                        title=title,
+                        brand=title.split(" ")[0] if title else "",
+                        size_raw=title,
+                        category_raw="skincare",
+                        price_current=price_current,
+                        price_list=price_list,
+                        promo_text=None,
+                        in_stock="agotado" not in text.lower(),
+                        scraped_at=now,
+                    )
+                    if len(offers_by_id) >= max_items:
+                        return list(offers_by_id.values())
+        finally:
+            browser.close()
+    return list(offers_by_id.values())
+
+
 def _add_or_replace_query(url: str, key: str, value: str) -> str:
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
@@ -358,6 +448,17 @@ def collect_falabella_skincare(max_items: int = 100) -> list[ProductOffer]:
             f"Could not fetch any Falabella pages (start_url={start_url}, pages={max_pages}). "
             f"Failed URLs: {', '.join(page_errors[:3])}"
         )
+    if not offers_by_id:
+        if use_playwright:
+            dom_offers = _collect_from_playwright_dom(
+                start_url=start_url,
+                max_pages=max_pages,
+                now=now,
+                max_items=max_items,
+            )
+            for offer in dom_offers:
+                offers_by_id[offer.retailer_product_id] = offer
+
     if not offers_by_id:
         render_part = f" Render errors: {' | '.join(render_errors[:2])}" if render_errors else ""
         raise RuntimeError(
