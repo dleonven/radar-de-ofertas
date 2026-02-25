@@ -18,6 +18,11 @@ DEFAULT_MAX_PAGES = 3
 DEFAULT_BROWSER_TIMEOUT_MS = 45000
 
 _PRICE_RE = re.compile(r"(\d{1,3}(?:[\.,]\d{3})+|\d+)")
+_CURRENCY_PRICE_RE = re.compile(r"(?:\$\s*)(\d{1,3}(?:[\.,]\d{3})+|\d{3,})")
+_JSON_PRICE_RE = re.compile(
+    r"\"(?:price|originalPrice|internetPrice|normalPrice|cmrPrice|bestPrice)\"\s*:\s*\"?(\d{1,3}(?:[\.,]\d{3})+|\d{3,})\"?",
+    re.IGNORECASE,
+)
 _HREF_RE = re.compile(
     r"href=[\"']([^\"']*/falabella-cl/product/[^\"']+)[\"']",
     re.IGNORECASE,
@@ -45,6 +50,30 @@ def _extract_price(value: str) -> Optional[float]:
         return float(token)
     except ValueError:
         return None
+
+
+def _extract_window_prices(window: str) -> list[float]:
+    prices: list[float] = []
+    for match in _CURRENCY_PRICE_RE.finditer(window):
+        token = match.group(1)
+        price = _extract_price(token)
+        if price is not None and price >= 500:
+            prices.append(price)
+
+    for match in _JSON_PRICE_RE.finditer(window):
+        token = match.group(1)
+        price = _extract_price(token)
+        if price is not None and price >= 500:
+            prices.append(price)
+
+    deduped: list[float] = []
+    seen: set[float] = set()
+    for p in prices:
+        if p in seen:
+            continue
+        seen.add(p)
+        deduped.append(p)
+    return deduped
 
 
 def _fetch_html(url: str) -> str:
@@ -222,8 +251,7 @@ def _parse_from_html_heuristic(html: str, base_url: str, now: datetime, max_item
         if not title:
             continue
 
-        prices = [_extract_price(m.group(0)) for m in _PRICE_RE.finditer(window)]
-        prices = [p for p in prices if p is not None and p > 0]
+        prices = _extract_window_prices(window)
         if not prices:
             continue
 
