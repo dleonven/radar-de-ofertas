@@ -334,12 +334,14 @@ def collect_falabella_skincare(max_items: int = 100) -> list[ProductOffer]:
         if not page_offers:
             page_offers = _parse_from_html_heuristic(html, page_url, now, max_items)
 
-        if not page_offers and use_playwright:
+        if use_playwright and len(page_offers) < 3:
             try:
                 rendered_html = _fetch_html_playwright(page_url)
-                page_offers = _parse_from_json_ld(rendered_html, page_url, now, max_items)
-                if not page_offers:
-                    page_offers = _parse_from_html_heuristic(rendered_html, page_url, now, max_items)
+                rendered_offers = _parse_from_json_ld(rendered_html, page_url, now, max_items)
+                if not rendered_offers:
+                    rendered_offers = _parse_from_html_heuristic(rendered_html, page_url, now, max_items)
+                if len(rendered_offers) > len(page_offers):
+                    page_offers = rendered_offers
             except Exception as exc:  # pragma: no cover
                 render_errors.append(f"{page_url}: {exc}")
 
