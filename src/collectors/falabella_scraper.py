@@ -266,11 +266,24 @@ def _parse_from_html_heuristic(html: str, base_url: str, now: datetime, max_item
         if not title:
             continue
 
+        price_current: Optional[float] = None
+        price_list: Optional[float] = None
         try:
             product_html = _fetch_html(url)
+            price_current, price_list = _extract_prices_from_product_html(product_html)
         except Exception:
-            continue
-        price_current, price_list = _extract_prices_from_product_html(product_html)
+            pass
+
+        if price_current is None:
+            # Fallback to listing-card scoped values when product pages block lightweight clients.
+            fallback_prices = _extract_window_prices(window)
+            if fallback_prices:
+                price_current = min(fallback_prices)
+                price_list = (
+                    max(fallback_prices)
+                    if len(fallback_prices) > 1 and max(fallback_prices) > min(fallback_prices)
+                    else None
+                )
         if price_current is None:
             continue
         in_stock = "agotado" not in window.lower()
