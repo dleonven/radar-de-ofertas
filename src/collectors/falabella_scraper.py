@@ -23,6 +23,7 @@ _JSON_PRICE_RE = re.compile(
     r"\"(?:price|originalPrice|internetPrice|normalPrice|cmrPrice|bestPrice)\"\s*:\s*\"?(\d{1,3}(?:[\.,]\d{3})+|\d{3,})\"?",
     re.IGNORECASE,
 )
+_PRODUCT_ID_RE = re.compile(r"/product/(\d+)")
 _HREF_RE = re.compile(
     r"href=[\"']([^\"']*/falabella-cl/product/[^\"']+)[\"']",
     re.IGNORECASE,
@@ -74,6 +75,20 @@ def _extract_window_prices(window: str) -> list[float]:
         seen.add(p)
         deduped.append(p)
     return deduped
+
+
+def _extract_prices_from_product_html(html: str) -> tuple[Optional[float], Optional[float]]:
+    jsonld_offers = _parse_from_json_ld(html, "https://www.falabella.com", datetime.now(timezone.utc), max_items=1)
+    if jsonld_offers:
+        offer = jsonld_offers[0]
+        return offer.price_current, offer.price_list
+
+    prices = _extract_window_prices(html)
+    if not prices:
+        return None, None
+    price_current = min(prices)
+    price_list = max(prices) if len(prices) > 1 and max(prices) > min(prices) else None
+    return price_current, price_list
 
 
 def _fetch_html(url: str) -> str:
@@ -139,7 +154,7 @@ def _page_urls(start_url: str, max_pages: int) -> list[str]:
 
 def _product_id_from_url(url: str) -> str:
     parsed = urlparse(url)
-    match = re.search(r"/product/(\d+)", parsed.path)
+    match = _PRODUCT_ID_RE.search(parsed.path)
     if match:
         return f"FB-{match.group(1)}"
     slug = parsed.path.rstrip("/").split("/")[-1]
@@ -251,12 +266,13 @@ def _parse_from_html_heuristic(html: str, base_url: str, now: datetime, max_item
         if not title:
             continue
 
-        prices = _extract_window_prices(window)
-        if not prices:
+        try:
+            product_html = _fetch_html(url)
+        except Exception:
             continue
-
-        price_current = min(prices)
-        price_list = max(prices) if len(prices) > 1 and max(prices) > min(prices) else None
+        price_current, price_list = _extract_prices_from_product_html(product_html)
+        if price_current is None:
+            continue
         in_stock = "agotado" not in window.lower()
 
         offers.append(
